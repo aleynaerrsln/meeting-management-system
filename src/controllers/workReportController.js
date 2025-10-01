@@ -1,11 +1,19 @@
 const WorkReport = require('../models/WorkReport');
 const User = require('../models/User');
 
+// @desc    Tüm çalışma raporlarını listele
+// @route   GET /api/work-reports
+// @access  Private
 exports.getAllWorkReports = async (req, res) => {
   try {
     let query = {};
+    
+    // Admin değilse sadece kendi raporları veya paylaşılanları görsün
     if (req.user.role !== 'admin') {
-      query.user = req.user._id;
+      query.$or = [
+        { user: req.user._id },
+        { sharedWith: req.user._id }
+      ];
     }
 
     const { userId, week, year, month, status } = req.query;
@@ -22,6 +30,9 @@ exports.getAllWorkReports = async (req, res) => {
 
     const reports = await WorkReport.find(query)
       .populate('user', 'firstName lastName email')
+      .populate('meeting', 'title')
+      .populate('sharedWith', 'firstName lastName email')
+      .populate('createdBy', 'firstName lastName')
       .sort({ date: -1 });
 
     const totalHours = reports.reduce((sum, report) => sum + report.hoursWorked, 0);
@@ -38,16 +49,27 @@ exports.getAllWorkReports = async (req, res) => {
   }
 };
 
+// @desc    Tek bir raporu getir
+// @route   GET /api/work-reports/:id
+// @access  Private
 exports.getWorkReportById = async (req, res) => {
   try {
     const report = await WorkReport.findById(req.params.id)
-      .populate('user', 'firstName lastName email');
+      .populate('user', 'firstName lastName email')
+      .populate('meeting', 'title')
+      .populate('sharedWith', 'firstName lastName email')
+      .populate('createdBy', 'firstName lastName');
 
     if (!report) {
       return res.status(404).json({ message: 'Rapor bulunamadı' });
     }
 
-    if (req.user.role !== 'admin' && report.user._id.toString() !== req.user._id.toString()) {
+    // Yetki kontrolü
+    const canView = req.user.role === 'admin' || 
+                    report.user._id.toString() === req.user._id.toString() ||
+                    report.sharedWith.some(u => u._id.toString() === req.user._id.toString());
+
+    if (!canView) {
       return res.status(403).json({ message: 'Bu raporu görme yetkiniz yok' });
     }
 
@@ -58,6 +80,9 @@ exports.getWorkReportById = async (req, res) => {
   }
 };
 
+// @desc    Yeni rapor oluştur
+// @route   POST /api/work-reports
+// @access  Private
 exports.createWorkReport = async (req, res) => {
   try {
     const { date, workDescription, hoursWorked, project, notes } = req.body;
@@ -76,7 +101,8 @@ exports.createWorkReport = async (req, res) => {
       workDescription,
       hoursWorked,
       project,
-      notes
+      notes,
+      createdBy: req.user._id
     });
 
     await report.populate('user', 'firstName lastName email');
@@ -91,9 +117,12 @@ exports.createWorkReport = async (req, res) => {
   }
 };
 
+// @desc    Rapor güncelle
+// @route   PUT /api/work-reports/:id
+// @access  Private
 exports.updateWorkReport = async (req, res) => {
   try {
-    const { date, workDescription, hoursWorked, project, notes, status } = req.body;
+    const { date, workDescription, hoursWorked, project, notes, status, sharedWith, isPrivate } = req.body;
 
     let report = await WorkReport.findById(req.params.id);
 
@@ -101,10 +130,15 @@ exports.updateWorkReport = async (req, res) => {
       return res.status(404).json({ message: 'Rapor bulunamadı' });
     }
 
-    if (req.user.role !== 'admin' && report.user.toString() !== req.user._id.toString()) {
+    // Yetki kontrolü
+    const canEdit = req.user.role === 'admin' || 
+                    report.user.toString() === req.user._id.toString();
+
+    if (!canEdit) {
       return res.status(403).json({ message: 'Bu raporu güncelleme yetkiniz yok' });
     }
 
+    // Durum değişikliği sadece admin yapabilir
     if (status && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Rapor durumunu değiştirme yetkiniz yok' });
     }
@@ -119,8 +153,15 @@ exports.updateWorkReport = async (req, res) => {
       report.status = status;
     }
 
+    // Admin paylaşım ayarlarını değiştirebilir
+    if (req.user.role === 'admin') {
+      if (sharedWith !== undefined) report.sharedWith = sharedWith;
+      if (isPrivate !== undefined) report.isPrivate = isPrivate;
+    }
+
     await report.save();
     await report.populate('user', 'firstName lastName email');
+    await report.populate('sharedWith', 'firstName lastName email');
 
     res.json({
       message: 'Rapor başarıyla güncellendi',
@@ -132,6 +173,9 @@ exports.updateWorkReport = async (req, res) => {
   }
 };
 
+// @desc    Rapor sil
+// @route   DELETE /api/work-reports/:id
+// @access  Private
 exports.deleteWorkReport = async (req, res) => {
   try {
     const report = await WorkReport.findById(req.params.id);
@@ -140,7 +184,11 @@ exports.deleteWorkReport = async (req, res) => {
       return res.status(404).json({ message: 'Rapor bulunamadı' });
     }
 
-    if (req.user.role !== 'admin' && report.user.toString() !== req.user._id.toString()) {
+    // Yetki kontrolü
+    const canDelete = req.user.role === 'admin' || 
+                      report.user.toString() === req.user._id.toString();
+
+    if (!canDelete) {
       return res.status(403).json({ message: 'Bu raporu silme yetkiniz yok' });
     }
 
@@ -152,6 +200,9 @@ exports.deleteWorkReport = async (req, res) => {
   }
 };
 
+// @desc    Haftalık özet
+// @route   GET /api/work-reports/summary/weekly
+// @access  Private
 exports.getWeeklySummary = async (req, res) => {
   try {
     const { week, year, userId } = req.query;
@@ -177,6 +228,9 @@ exports.getWeeklySummary = async (req, res) => {
   }
 };
 
+// @desc    Aylık özet
+// @route   GET /api/work-reports/summary/monthly
+// @access  Private
 exports.getMonthlySummary = async (req, res) => {
   try {
     const { month, year, userId } = req.query;
@@ -202,6 +256,9 @@ exports.getMonthlySummary = async (req, res) => {
   }
 };
 
+// @desc    Tüm kullanıcıların özeti
+// @route   GET /api/work-reports/summary/all-users
+// @access  Private/Admin
 exports.getAllUsersSummary = async (req, res) => {
   try {
     const { week, year, month } = req.query;
@@ -248,3 +305,5 @@ exports.getAllUsersSummary = async (req, res) => {
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
+
+module.exports = exports;

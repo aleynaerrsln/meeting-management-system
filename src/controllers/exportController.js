@@ -2,7 +2,8 @@ const {
   exportWorkReportsToExcel,
   exportMeetingsToExcel,
   exportAttendanceToExcel,
-  exportProductivityReport
+  exportProductivityReport,
+  exportMeetingNotesReport  // 👈 YENİ EKLENEN
 } = require('../services/excelService');
 
 // @desc    Çalışma raporlarını Excel'e aktar
@@ -118,5 +119,27 @@ exports.exportProductivity = async (req, res) => {
   } catch (error) {
     console.error('Export hatası:', error);
     res.status(500).json({ message: 'Excel export hatası', error: error.message });
+  }
+};
+
+// 👇 YENİ FONKSİYON: Toplantı not raporunu Excel'e aktar
+// @desc    Toplantı not raporunu Excel'e aktar
+// @route   GET /api/export/meeting-notes/:meetingId
+// @access  Private/Admin
+exports.exportMeetingNotes = async (req, res) => {
+  try {
+    const { meetingId } = req.params;
+
+    const buffer = await exportMeetingNotesReport(meetingId);
+
+    const fileName = `toplanti-raporu-${meetingId}-${new Date().getTime()}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    
+    res.send(buffer);
+  } catch (error) {
+    console.error('Not raporu export hatası:', error);
+    res.status(500).json({ message: 'Not raporu export hatası', error: error.message });
   }
 };

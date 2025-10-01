@@ -40,6 +40,25 @@ const workReportSchema = new mongoose.Schema({
   },
   year: {
     type: Number
+  },
+  // 👇 YENİ ALANLAR - Toplantı İçin
+  meeting: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Meeting',
+    default: null
+  },
+  sharedWith: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  isPrivate: {
+    type: Boolean,
+    default: false
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   }
 }, {
   timestamps: true

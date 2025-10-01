@@ -1,5 +1,6 @@
 const Meeting = require('../models/Meeting');
 const User = require('../models/User');
+const WorkReport = require('../models/WorkReport');
 const { sendMeetingInvitation, sendMeetingUpdateNotification } = require('../services/emailService');
 
 // @desc    Tüm toplantıları listele
@@ -343,4 +344,55 @@ exports.getMeetingReport = async (req, res) => {
   }
 };
 
-module.exports = exports;
+// @desc    Toplantıdan Çalışma Raporu Oluştur
+// @route   POST /api/meetings/:id/create-report
+// @access  Private/Admin
+exports.createReportFromMeeting = async (req, res) => {
+  try {
+    const { isPrivate, sharedWith, assignToUser } = req.body;
+    
+    const meeting = await Meeting.findById(req.params.id)
+      .populate('notes.createdBy', 'firstName lastName');
+
+    if (!meeting) {
+      return res.status(404).json({ message: 'Toplantı bulunamadı' });
+    }
+
+    if (meeting.status !== 'completed') {
+      return res.status(400).json({ message: 'Sadece tamamlanmış toplantılardan rapor oluşturulabilir' });
+    }
+
+    const reportDescription = meeting.notes.length > 0
+      ? meeting.notes.map((note, index) => 
+          `${index + 1}. ${note.title}\n${note.content}\n---`
+        ).join('\n\n')
+      : 'Toplantı tamamlandı. Not eklenmedi.';
+
+    const hoursWorked = 2;
+
+    const workReport = await WorkReport.create({
+      user: assignToUser || req.user._id,
+      date: meeting.date,
+      workDescription: `TOPLANTI RAPORU: ${meeting.title}\n\nYer: ${meeting.location}\nTarih: ${new Date(meeting.date).toLocaleDateString('tr-TR')} ${meeting.time}\n\n${reportDescription}`,
+      hoursWorked,
+      project: meeting.title,
+      status: 'approved',
+      notes: `Bu rapor "${meeting.title}" toplantısından otomatik olarak oluşturulmuştur.`,
+      meeting: meeting._id,
+      sharedWith: sharedWith || [],
+      isPrivate: isPrivate || false,
+      createdBy: req.user._id
+    });
+
+    await workReport.populate('user', 'firstName lastName email');
+    await workReport.populate('sharedWith', 'firstName lastName email');
+
+    res.status(201).json({
+      message: 'Toplantıdan çalışma raporu başarıyla oluşturuldu',
+      report: workReport
+    });
+  } catch (error) {
+    console.error('Toplantı raporu oluşturma hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
