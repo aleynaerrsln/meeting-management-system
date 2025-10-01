@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const meetingSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: [true, 'Toplantı başlığı zorunludur'],
+    required: [true, 'Toplantı başlığı gereklidir'],
     trim: true
   },
   description: {
@@ -12,15 +12,15 @@ const meetingSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Toplantı tarihi zorunludur']
+    required: [true, 'Toplantı tarihi gereklidir']
   },
   time: {
     type: String,
-    required: [true, 'Toplantı saati zorunludur']
+    required: [true, 'Toplantı saati gereklidir']
   },
   location: {
     type: String,
-    required: [true, 'Toplantı yeri zorunludur'],
+    required: [true, 'Toplantı yeri gereklidir'],
     trim: true
   },
   participants: [{
@@ -44,11 +44,32 @@ const meetingSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ['attended', 'not_attended', 'pending'],
+      enum: ['pending', 'attended', 'not_attended'],
       default: 'pending'
     },
-    markedAt: Date,
+    markedAt: {
+      type: Date
+    },
     markedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }],
+  notes: [{
+    title: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    content: {
+      type: String,
+      required: true
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
@@ -57,9 +78,9 @@ const meetingSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Toplantı oluşturulduğunda katılımcıları otomatik attendance'a ekle
+// Toplantı oluşturulduğunda attendance listesini otomatik oluştur
 meetingSchema.pre('save', function(next) {
-  if (this.isNew && this.participants.length > 0) {
+  if (this.isNew) {
     this.attendance = this.participants.map(participantId => ({
       user: participantId,
       status: 'pending'

@@ -9,7 +9,6 @@ exports.getAllMeetings = async (req, res) => {
   try {
     let query = {};
 
-    // Admin değilse sadece kendi toplantılarını görsün
     if (req.user.role !== 'admin') {
       query.participants = req.user._id;
     }
@@ -18,6 +17,7 @@ exports.getAllMeetings = async (req, res) => {
       .populate('participants', 'firstName lastName email')
       .populate('createdBy', 'firstName lastName')
       .populate('attendance.user', 'firstName lastName email')
+      .populate('notes.createdBy', 'firstName lastName')
       .sort({ date: 1 });
 
     res.json({
@@ -40,13 +40,13 @@ exports.getMeetingById = async (req, res) => {
       .populate('participants', 'firstName lastName email')
       .populate('createdBy', 'firstName lastName')
       .populate('attendance.user', 'firstName lastName email')
-      .populate('attendance.markedBy', 'firstName lastName');
+      .populate('attendance.markedBy', 'firstName lastName')
+      .populate('notes.createdBy', 'firstName lastName');
 
     if (!meeting) {
       return res.status(404).json({ message: 'Toplantı bulunamadı' });
     }
 
-    // Admin değilse ve katılımcı değilse gösterme
     if (req.user.role !== 'admin' && !meeting.participants.some(p => p._id.toString() === req.user._id.toString())) {
       return res.status(403).json({ message: 'Bu toplantıyı görme yetkiniz yok' });
     }
@@ -65,23 +65,19 @@ exports.createMeeting = async (req, res) => {
   try {
     const { title, description, date, time, location, participants } = req.body;
 
-    // Validasyon
     if (!title || !date || !time || !location) {
       return res.status(400).json({ message: 'Başlık, tarih, saat ve yer zorunludur' });
     }
 
-    // Katılımcıları kontrol et
     if (!participants || participants.length === 0) {
       return res.status(400).json({ message: 'En az bir katılımcı seçilmelidir' });
     }
 
-    // Katılımcıların var olup olmadığını kontrol et
     const users = await User.find({ _id: { $in: participants } });
     if (users.length !== participants.length) {
       return res.status(400).json({ message: 'Bazı katılımcılar bulunamadı' });
     }
 
-    // Toplantı oluştur
     const meeting = await Meeting.create({
       title,
       description,
@@ -92,16 +88,13 @@ exports.createMeeting = async (req, res) => {
       createdBy: req.user._id
     });
 
-    // Populate et
     await meeting.populate('participants', 'firstName lastName email');
     await meeting.populate('createdBy', 'firstName lastName');
 
-    // E-posta gönder (hata olsa bile toplantı oluşturulur)
     try {
       await sendMeetingInvitation(meeting, users);
     } catch (emailError) {
       console.error('E-posta gönderme hatası:', emailError);
-      // E-posta hatası olsa bile toplantı oluşturuldu
     }
 
     res.status(201).json({
@@ -127,7 +120,6 @@ exports.updateMeeting = async (req, res) => {
       return res.status(404).json({ message: 'Toplantı bulunamadı' });
     }
 
-    // Güncelle
     meeting.title = title || meeting.title;
     meeting.description = description !== undefined ? description : meeting.description;
     meeting.date = date || meeting.date;
@@ -142,7 +134,6 @@ exports.updateMeeting = async (req, res) => {
       }
       meeting.participants = participants;
 
-      // Attendance listesini güncelle
       meeting.attendance = participants.map(participantId => {
         const existing = meeting.attendance.find(a => a.user.toString() === participantId.toString());
         return existing || { user: participantId, status: 'pending' };
@@ -153,7 +144,6 @@ exports.updateMeeting = async (req, res) => {
     await meeting.populate('participants', 'firstName lastName email');
     await meeting.populate('createdBy', 'firstName lastName');
 
-    // Güncelleme bildirimi gönder
     try {
       const users = await User.find({ _id: { $in: meeting.participants } });
       await sendMeetingUpdateNotification(meeting, users);
@@ -212,12 +202,10 @@ exports.markAttendance = async (req, res) => {
       return res.status(404).json({ message: 'Toplantı bulunamadı' });
     }
 
-    // Katılımcı listesinde var mı kontrol et
     if (!meeting.participants.some(p => p.toString() === userId)) {
       return res.status(400).json({ message: 'Bu kullanıcı toplantı katılımcısı değil' });
     }
 
-    // Yoklama durumunu güncelle
     const attendanceIndex = meeting.attendance.findIndex(a => a.user.toString() === userId);
     
     if (attendanceIndex !== -1) {
@@ -239,3 +227,120 @@ exports.markAttendance = async (req, res) => {
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
+
+// @desc    Toplantıya not ekle
+// @route   POST /api/meetings/:id/notes
+// @access  Private/Admin
+exports.addNote = async (req, res) => {
+  try {
+    const { title, content } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ message: 'Başlık ve içerik gereklidir' });
+    }
+
+    const meeting = await Meeting.findById(req.params.id);
+
+    if (!meeting) {
+      return res.status(404).json({ message: 'Toplantı bulunamadı' });
+    }
+
+    meeting.notes.push({
+      title,
+      content,
+      createdBy: req.user._id,
+      createdAt: new Date()
+    });
+
+    await meeting.save();
+    await meeting.populate('notes.createdBy', 'firstName lastName');
+
+    res.json({
+      message: 'Not başarıyla eklendi',
+      notes: meeting.notes
+    });
+  } catch (error) {
+    console.error('Not ekleme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// @desc    Toplantıdan not sil
+// @route   DELETE /api/meetings/:id/notes/:noteId
+// @access  Private/Admin
+exports.deleteNote = async (req, res) => {
+  try {
+    const meeting = await Meeting.findById(req.params.id);
+
+    if (!meeting) {
+      return res.status(404).json({ message: 'Toplantı bulunamadı' });
+    }
+
+    const noteExists = meeting.notes.some(note => note._id.toString() === req.params.noteId);
+    
+    if (!noteExists) {
+      return res.status(404).json({ message: 'Not bulunamadı' });
+    }
+
+    meeting.notes = meeting.notes.filter(note => note._id.toString() !== req.params.noteId);
+    
+    await meeting.save();
+
+    res.json({
+      message: 'Not başarıyla silindi',
+      notes: meeting.notes
+    });
+  } catch (error) {
+    console.error('Not silme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// @desc    Toplantı raporunu getir
+// @route   GET /api/meetings/:id/report
+// @access  Private/Admin
+exports.getMeetingReport = async (req, res) => {
+  try {
+    const meeting = await Meeting.findById(req.params.id)
+      .populate('participants', 'firstName lastName email')
+      .populate('attendance.user', 'firstName lastName email')
+      .populate('notes.createdBy', 'firstName lastName');
+
+    if (!meeting) {
+      return res.status(404).json({ message: 'Toplantı bulunamadı' });
+    }
+
+    const attendedCount = meeting.attendance.filter(a => a.status === 'attended').length;
+    const notAttendedCount = meeting.attendance.filter(a => a.status === 'not_attended').length;
+    const pendingCount = meeting.attendance.filter(a => a.status === 'pending').length;
+
+    const report = {
+      meeting: {
+        title: meeting.title,
+        description: meeting.description,
+        date: meeting.date,
+        time: meeting.time,
+        location: meeting.location,
+        status: meeting.status
+      },
+      attendance: {
+        total: meeting.participants.length,
+        attended: attendedCount,
+        notAttended: notAttendedCount,
+        pending: pendingCount,
+        details: meeting.attendance
+      },
+      notes: {
+        total: meeting.notes.length,
+        details: meeting.notes
+      }
+    };
+
+    res.json(report);
+  } catch (error) {
+    console.error('Rapor oluşturma hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+module.exports = exports;
