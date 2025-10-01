@@ -351,6 +351,8 @@ exports.createReportFromMeeting = async (req, res) => {
   try {
     const { isPrivate, sharedWith, assignToUser } = req.body;
     
+    console.log('📥 Gelen Rapor Verisi:', { isPrivate, sharedWith, assignToUser });
+    
     const meeting = await Meeting.findById(req.params.id)
       .populate('notes.createdBy', 'firstName lastName');
 
@@ -386,13 +388,18 @@ exports.createReportFromMeeting = async (req, res) => {
 
     await workReport.populate('user', 'firstName lastName email');
     await workReport.populate('sharedWith', 'firstName lastName email');
+    await workReport.populate('meeting', 'title');
+
+    console.log('✅ Çalışma raporu oluşturuldu:', workReport._id);
 
     res.status(201).json({
       message: 'Toplantıdan çalışma raporu başarıyla oluşturuldu',
       report: workReport
     });
   } catch (error) {
-    console.error('Toplantı raporu oluşturma hatası:', error);
+    console.error('❌ Toplantı raporu oluşturma hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
+
+module.exports = exports;

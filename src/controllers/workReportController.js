@@ -4,7 +4,7 @@ const User = require('../models/User');
 // @desc    Tüm çalışma raporlarını listele
 // @route   GET /api/work-reports
 // @access  Private
-exports.getAllWorkReports = async (req, res) => {
+const getAllWorkReports = async (req, res) => {
   try {
     let query = {};
     
@@ -28,12 +28,16 @@ exports.getAllWorkReports = async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
+    console.log('🔍 WorkReport Query:', query);
+
     const reports = await WorkReport.find(query)
       .populate('user', 'firstName lastName email')
       .populate('meeting', 'title')
       .populate('sharedWith', 'firstName lastName email')
       .populate('createdBy', 'firstName lastName')
       .sort({ date: -1 });
+
+    console.log('📊 Bulunan Rapor Sayısı:', reports.length);
 
     const totalHours = reports.reduce((sum, report) => sum + report.hoursWorked, 0);
 
@@ -52,7 +56,7 @@ exports.getAllWorkReports = async (req, res) => {
 // @desc    Tek bir raporu getir
 // @route   GET /api/work-reports/:id
 // @access  Private
-exports.getWorkReportById = async (req, res) => {
+const getWorkReportById = async (req, res) => {
   try {
     const report = await WorkReport.findById(req.params.id)
       .populate('user', 'firstName lastName email')
@@ -83,7 +87,7 @@ exports.getWorkReportById = async (req, res) => {
 // @desc    Yeni rapor oluştur
 // @route   POST /api/work-reports
 // @access  Private
-exports.createWorkReport = async (req, res) => {
+const createWorkReport = async (req, res) => {
   try {
     const { date, workDescription, hoursWorked, project, notes } = req.body;
 
@@ -102,6 +106,9 @@ exports.createWorkReport = async (req, res) => {
       hoursWorked,
       project,
       notes,
+      meeting: null,
+      sharedWith: [],
+      isPrivate: false,
       createdBy: req.user._id
     });
 
@@ -120,7 +127,7 @@ exports.createWorkReport = async (req, res) => {
 // @desc    Rapor güncelle
 // @route   PUT /api/work-reports/:id
 // @access  Private
-exports.updateWorkReport = async (req, res) => {
+const updateWorkReport = async (req, res) => {
   try {
     const { date, workDescription, hoursWorked, project, notes, status, sharedWith, isPrivate } = req.body;
 
@@ -176,7 +183,7 @@ exports.updateWorkReport = async (req, res) => {
 // @desc    Rapor sil
 // @route   DELETE /api/work-reports/:id
 // @access  Private
-exports.deleteWorkReport = async (req, res) => {
+const deleteWorkReport = async (req, res) => {
   try {
     const report = await WorkReport.findById(req.params.id);
 
@@ -203,7 +210,7 @@ exports.deleteWorkReport = async (req, res) => {
 // @desc    Haftalık özet
 // @route   GET /api/work-reports/summary/weekly
 // @access  Private
-exports.getWeeklySummary = async (req, res) => {
+const getWeeklySummary = async (req, res) => {
   try {
     const { week, year, userId } = req.query;
 
@@ -231,7 +238,7 @@ exports.getWeeklySummary = async (req, res) => {
 // @desc    Aylık özet
 // @route   GET /api/work-reports/summary/monthly
 // @access  Private
-exports.getMonthlySummary = async (req, res) => {
+const getMonthlySummary = async (req, res) => {
   try {
     const { month, year, userId } = req.query;
 
@@ -259,7 +266,7 @@ exports.getMonthlySummary = async (req, res) => {
 // @desc    Tüm kullanıcıların özeti
 // @route   GET /api/work-reports/summary/all-users
 // @access  Private/Admin
-exports.getAllUsersSummary = async (req, res) => {
+const getAllUsersSummary = async (req, res) => {
   try {
     const { week, year, month } = req.query;
     const users = await User.find({ isActive: true }).select('firstName lastName email');
@@ -306,4 +313,13 @@ exports.getAllUsersSummary = async (req, res) => {
   }
 };
 
-module.exports = exports;
+module.exports = {
+  getAllWorkReports,
+  getWorkReportById,
+  createWorkReport,
+  updateWorkReport,
+  deleteWorkReport,
+  getWeeklySummary,
+  getMonthlySummary,
+  getAllUsersSummary
+};
