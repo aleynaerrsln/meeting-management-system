@@ -40,6 +40,15 @@ const userSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date
+  },
+  // 🆕 Şifre Sıfırlama İçin
+  resetPasswordToken: {
+    type: String,
+    default: undefined
+  },
+  resetPasswordExpire: {
+    type: Date,
+    default: undefined
   }
 }, {
   timestamps: true
@@ -67,6 +76,8 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;
+  delete user.resetPasswordToken;
+  delete user.resetPasswordExpire;
   return user;
 };
 

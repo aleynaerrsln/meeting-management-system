@@ -3,9 +3,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
-// Scheduled Jobs
-const { scheduleDailyReminders, scheduleHourlyReminders } = require('./src/services/scheduledJobs');
-
 const app = express();
 
 // Middleware
@@ -20,10 +17,6 @@ app.use(express.urlencoded({ extended: true }));
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('✅ MongoDB Atlas bağlantısı başarılı');
-    
-    // Scheduled jobs başlat
-    scheduleDailyReminders();
-    scheduleHourlyReminders();
   })
   .catch((err) => console.error('❌ MongoDB bağlantı hatası:', err));
 
@@ -32,7 +25,7 @@ app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/users', require('./src/routes/users'));
 app.use('/api/meetings', require('./src/routes/meetings'));
 app.use('/api/work-reports', require('./src/routes/workReports'));
-app.use('/api/export', require('./src/routes/export'));  // 👈 YENİ
+app.use('/api/export', require('./src/routes/export'));
 
 // Test Route
 app.get('/', (req, res) => {
@@ -45,8 +38,7 @@ app.get('/', (req, res) => {
       users: '✅',
       meetings: '✅',
       workReports: '✅',
-      export: '✅',
-      scheduledReminders: '✅'
+      export: '✅'
     }
   });
 });

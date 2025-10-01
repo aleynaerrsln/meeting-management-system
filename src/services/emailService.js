@@ -2,7 +2,6 @@ const nodemailer = require('nodemailer');
 
 // E-posta transporter oluştur
 const createTransporter = () => {
-  // Gmail kullanıyorsanız
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -10,17 +9,6 @@ const createTransporter = () => {
       pass: process.env.EMAIL_PASSWORD
     }
   });
-
-  // Veya özel SMTP ayarları
-  // return nodemailer.createTransporter({
-  //   host: process.env.SMTP_HOST,
-  //   port: process.env.SMTP_PORT,
-  //   secure: true,
-  //   auth: {
-  //     user: process.env.SMTP_USER,
-  //     pass: process.env.SMTP_PASSWORD
-  //   }
-  // });
 };
 
 // Toplantı daveti e-postası gönder
@@ -108,42 +96,58 @@ exports.sendMeetingUpdateNotification = async (meeting, participants) => {
   }
 };
 
-// Toplantı hatırlatma e-postası
-exports.sendMeetingReminder = async (meeting, participants) => {
+// Şifre sıfırlama e-postası
+exports.sendPasswordResetEmail = async (user, resetToken) => {
   try {
     const transporter = createTransporter();
+    
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    const mailPromises = participants.map(participant => {
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: participant.email,
-        subject: `Hatırlatma: ${meeting.title}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #e74c3c;">⏰ Toplantı Hatırlatması</h2>
-            <p>Merhaba <strong>${participant.firstName} ${participant.lastName}</strong>,</p>
-            <p>Yaklaşan toplantınızı hatırlatmak isteriz:</p>
-            
-            <div style="background: #ffe5e5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #e74c3c;">
-              <h3 style="margin-top: 0; color: #2c3e50;">${meeting.title}</h3>
-              <p><strong>📅 Tarih:</strong> ${new Date(meeting.date).toLocaleDateString('tr-TR')}</p>
-              <p><strong>🕐 Saat:</strong> ${meeting.time}</p>
-              <p><strong>📍 Yer:</strong> ${meeting.location}</p>
-            </div>
-            
-            <p><strong>Lütfen toplantıya zamanında katılın!</strong></p>
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Şifre Sıfırlama Talebi',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">🔐 Şifre Sıfırlama</h2>
+          <p>Merhaba <strong>${user.firstName} ${user.lastName}</strong>,</p>
+          <p>Hesabınız için şifre sıfırlama talebinde bulunuldu.</p>
+          
+          <div style="background: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin-bottom: 15px;">Şifrenizi sıfırlamak için aşağıdaki butona tıklayın:</p>
+            <a href="${resetUrl}" style="display: inline-block; padding: 12px 30px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+              Şifremi Sıfırla
+            </a>
+            <p style="color: #e74c3c; margin-top: 15px; font-size: 14px;">
+              ⚠️ <strong>Bu bağlantı 1 saat geçerlidir.</strong>
+            </p>
           </div>
-        `
-      };
+          
+          <p style="color: #666; font-size: 14px;">
+            Eğer bu talebi siz yapmadıysanız, bu e-postayı görmezden gelebilirsiniz.
+          </p>
+          
+          <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+          
+          <p style="color: #999; font-size: 12px;">
+            Bu bağlantıyı başkalarıyla paylaşmayın. Eğer buton çalışmıyorsa, aşağıdaki linki kopyalayıp tarayıcınıza yapıştırabilirsiniz:
+          </p>
+          <p style="color: #666; font-size: 11px; word-break: break-all;">
+            ${resetUrl}
+          </p>
+          
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">
+            Bu e-posta otomatik olarak Toplantı Yönetim Sistemi tarafından gönderilmiştir.
+          </p>
+        </div>
+      `
+    };
 
-      return transporter.sendMail(mailOptions);
-    });
-
-    await Promise.all(mailPromises);
-    console.log(`✅ Hatırlatma ${participants.length} katılımcıya gönderildi`);
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Şifre sıfırlama e-postası gönderildi: ${user.email}`);
     return true;
   } catch (error) {
-    console.error('Hatırlatma gönderme hatası:', error);
+    console.error('❌ Şifre sıfırlama e-postası hatası:', error);
     throw error;
   }
 };

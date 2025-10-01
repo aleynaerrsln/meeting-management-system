@@ -19,7 +19,7 @@ exports.getAllMeetings = async (req, res) => {
       .populate('createdBy', 'firstName lastName')
       .populate('attendance.user', 'firstName lastName email')
       .populate('notes.createdBy', 'firstName lastName')
-      .sort({ date: 1 });
+      .sort({ date: -1 });
 
     res.json({
       success: true,
