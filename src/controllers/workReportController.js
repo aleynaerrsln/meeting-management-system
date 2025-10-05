@@ -1,5 +1,6 @@
 const WorkReport = require('../models/WorkReport');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 // @desc    Tüm çalışma raporlarını listele
 // @route   GET /api/work-reports
@@ -8,7 +9,7 @@ const getAllWorkReports = async (req, res) => {
   try {
     let query = {};
     
-    // 🎯 KRITIK DEĞİŞİKLİK: Toplantılardan oluşturulan raporları hariç tut
+    // Toplantılardan oluşturulan raporları hariç tut
     query.meeting = null;
     
     // Admin değilse sadece kendi raporları veya paylaşılanları görsün
@@ -135,7 +136,8 @@ const createWorkReport = async (req, res) => {
       meeting: null,
       sharedWith: [],
       isPrivate: false,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      status: 'submitted'
     });
 
     await report.populate('user', 'firstName lastName email');
@@ -155,7 +157,7 @@ const createWorkReport = async (req, res) => {
 // @access  Private
 const updateWorkReport = async (req, res) => {
   try {
-    const { date, workDescription, startTime, endTime, project, notes, status, sharedWith, isPrivate } = req.body;
+    const { date, workDescription, startTime, endTime, project, notes, status, sharedWith, isPrivate, rejectionReason } = req.body;
 
     let report = await WorkReport.findById(req.params.id);
 
@@ -186,7 +188,6 @@ const updateWorkReport = async (req, res) => {
       report.startTime = startTime;
       report.endTime = endTime;
 
-      // Yeni saat hesaplama
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
       
@@ -201,8 +202,35 @@ const updateWorkReport = async (req, res) => {
       report.hoursWorked = Number((diffMinutes / 60).toFixed(2));
     }
     
-    if (status && req.user.role === 'admin') {
+    // 🆕 DURUM DEĞİŞİKLİĞİ VE BİLDİRİM
+    if (status && req.user.role === 'admin' && status !== report.status) {
+      const oldStatus = report.status;
       report.status = status;
+
+      // Red durumunda sebep kaydet
+      if (status === 'rejected' && rejectionReason) {
+        report.rejectionReason = rejectionReason;
+        console.log('📝 Red sebebi kaydedildi:', rejectionReason);
+      }
+
+      // Red veya onay durumunda bildirim oluştur
+      if (status === 'rejected' || status === 'approved') {
+        const notificationData = {
+          user: report.user,
+          type: status === 'rejected' ? 'report_rejected' : 'report_approved',
+          title: status === 'rejected' ? 'Rapor Reddedildi' : 'Rapor Onaylandı',
+          message: status === 'rejected' 
+            ? `"${report.workDescription.substring(0, 50)}..." raporunuz reddedildi.${rejectionReason ? ' Sebep: ' + rejectionReason : ''}`
+            : `"${report.workDescription.substring(0, 50)}..." raporunuz onaylandı.`,
+          relatedReport: report._id
+        };
+
+        console.log('🔔 Bildirim oluşturuluyor:', notificationData);
+
+        const notification = await Notification.create(notificationData);
+
+        console.log('✅ Bildirim başarıyla oluşturuldu:', notification._id);
+      }
     }
 
     // Admin paylaşım ayarlarını değiştirebilir
@@ -215,12 +243,14 @@ const updateWorkReport = async (req, res) => {
     await report.populate('user', 'firstName lastName email');
     await report.populate('sharedWith', 'firstName lastName email');
 
+    console.log('💾 Rapor kaydedildi. Durum:', report.status, 'Red Sebebi:', report.rejectionReason);
+
     res.json({
       message: 'Rapor başarıyla güncellendi',
       report
     });
   } catch (error) {
-    console.error('Rapor güncelleme hatası:', error);
+    console.error('❌ Rapor güncelleme hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
@@ -264,12 +294,11 @@ const getWeeklySummary = async (req, res) => {
     }
 
     const targetUserId = (req.user.role === 'admin' && userId) ? userId : req.user._id;
+
     const summary = await WorkReport.getWeeklyHours(targetUserId, parseInt(week), parseInt(year));
-    const user = await User.findById(targetUserId).select('firstName lastName email');
 
     res.json({
       success: true,
-      user,
       week: parseInt(week),
       year: parseInt(year),
       ...summary
@@ -292,12 +321,11 @@ const getMonthlySummary = async (req, res) => {
     }
 
     const targetUserId = (req.user.role === 'admin' && userId) ? userId : req.user._id;
+
     const summary = await WorkReport.getMonthlyHours(targetUserId, parseInt(month), parseInt(year));
-    const user = await User.findById(targetUserId).select('firstName lastName email');
 
     res.json({
       success: true,
-      user,
       month: parseInt(month),
       year: parseInt(year),
       ...summary
@@ -314,7 +342,7 @@ const getMonthlySummary = async (req, res) => {
 const getAllUsersSummary = async (req, res) => {
   try {
     const { week, year, month } = req.query;
-    const users = await User.find({ isActive: true }).select('firstName lastName email');
+    const users = await User.find().select('firstName lastName email');
     
     const summaries = await Promise.all(users.map(async (user) => {
       let summary;

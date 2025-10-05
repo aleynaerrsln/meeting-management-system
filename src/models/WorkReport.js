@@ -6,31 +6,39 @@ const workReportSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  meeting: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Meeting',
+    default: null
+  },
   date: {
     type: Date,
-    required: [true, 'Tarih zorunludur'],
+    required: true,
     default: Date.now
   },
   workDescription: {
     type: String,
-    required: [true, 'Çalışma açıklaması zorunludur'],
+    required: true,
     trim: true
   },
   startTime: {
     type: String,
-    required: [true, 'Başlangıç saati zorunludur']
+    required: true
   },
   endTime: {
     type: String,
-    required: [true, 'Bitiş saati zorunludur']
+    required: true
   },
   hoursWorked: {
     type: Number,
-    required: [true, 'Çalışma saati zorunludur'],
-    min: [0, 'Çalışma saati negatif olamaz'],
-    max: [24, 'Çalışma saati 24 saati geçemez']
+    required: true,
+    min: 0
   },
   project: {
+    type: String,
+    trim: true
+  },
+  notes: {
     type: String,
     trim: true
   },
@@ -39,20 +47,17 @@ const workReportSchema = new mongoose.Schema({
     enum: ['draft', 'submitted', 'approved', 'rejected'],
     default: 'submitted'
   },
-  notes: {
+  rejectionReason: {
     type: String,
     trim: true
   },
   week: {
-    type: Number
+    type: Number,
+    min: 1,
+    max: 53
   },
   year: {
     type: Number
-  },
-  meeting: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Meeting',
-    default: null
   },
   sharedWith: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -66,39 +71,38 @@ const workReportSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-// Otomatik saat hesaplama ve hafta/yıl belirleme
+// Index for faster queries
+workReportSchema.index({ user: 1, date: -1 });
+workReportSchema.index({ week: 1, year: 1 });
+workReportSchema.index({ meeting: 1 });
+workReportSchema.index({ status: 1 });
+
+// Hafta ve yıl otomatik hesaplama
 workReportSchema.pre('save', function(next) {
-  // Saat hesaplama (eğer startTime ve endTime varsa)
-  if (this.startTime && this.endTime && !this.hoursWorked) {
-    const [startHour, startMin] = this.startTime.split(':').map(Number);
-    const [endHour, endMin] = this.endTime.split(':').map(Number);
-    
-    const startMinutes = startHour * 60 + startMin;
-    const endMinutes = endHour * 60 + endMin;
-    
-    let diffMinutes = endMinutes - startMinutes;
-    if (diffMinutes < 0) {
-      diffMinutes += 24 * 60; // Gece yarısını geçen durumlar için
-    }
-    
-    this.hoursWorked = Number((diffMinutes / 60).toFixed(2));
-  }
-  
-  // Hafta ve yıl hesaplama
   const date = new Date(this.date);
   this.year = date.getFullYear();
+  
+  // ISO 8601 hafta hesaplama
   const firstDayOfYear = new Date(this.year, 0, 1);
   const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
   this.week = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   
+  this.updatedAt = Date.now();
   next();
 });
 
+// Haftalık çalışma saati hesaplama
 workReportSchema.statics.getWeeklyHours = async function(userId, week, year) {
   const reports = await this.find({
     user: userId,
@@ -115,6 +119,7 @@ workReportSchema.statics.getWeeklyHours = async function(userId, week, year) {
   };
 };
 
+// Aylık çalışma saati hesaplama
 workReportSchema.statics.getMonthlyHours = async function(userId, month, year) {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
