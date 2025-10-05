@@ -34,6 +34,40 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  // 🆕 YENİ ALANLAR - Kişisel Bilgiler
+  birthDate: {
+    type: Date,
+    default: null
+  },
+  birthPlace: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  nationalId: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: function(v) {
+        // TC Kimlik No 11 haneli olmalı (opsiyonel kontrol)
+        return !v || /^\d{11}$/.test(v);
+      },
+      message: 'TC Kimlik No 11 haneli olmalıdır'
+    }
+  },
+  iban: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: function(v) {
+        // IBAN formatı kontrolü (basit kontrol)
+        return !v || /^TR\d{24}$/.test(v.replace(/\s/g, ''));
+      },
+      message: 'Geçerli bir Türk IBAN numarası giriniz (TR + 24 hane)'
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -41,7 +75,7 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
-  // 🆕 Şifre Sıfırlama İçin
+  // Şifre Sıfırlama İçin
   resetPasswordToken: {
     type: String,
     default: undefined

@@ -41,11 +41,21 @@ exports.getUserById = async (req, res) => {
 // @access  Private/Admin
 exports.createUser = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, role } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      password, 
+      role,
+      birthDate,
+      birthPlace,
+      nationalId,
+      iban
+    } = req.body;
 
     // Validasyon
     if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ message: 'Tüm alanlar zorunludur' });
+      return res.status(400).json({ message: 'Ad, soyad, e-posta ve şifre zorunludur' });
     }
 
     // E-posta kontrolü
@@ -54,13 +64,33 @@ exports.createUser = async (req, res) => {
       return res.status(400).json({ message: 'Bu e-posta adresi zaten kayıtlı' });
     }
 
+    // TC Kimlik No kontrolü (eğer girilmişse)
+    if (nationalId) {
+      const existingNationalId = await User.findOne({ nationalId });
+      if (existingNationalId) {
+        return res.status(400).json({ message: 'Bu TC Kimlik No zaten kayıtlı' });
+      }
+    }
+
+    // IBAN kontrolü (eğer girilmişse)
+    if (iban) {
+      const existingIban = await User.findOne({ iban });
+      if (existingIban) {
+        return res.status(400).json({ message: 'Bu IBAN zaten kayıtlı' });
+      }
+    }
+
     // Yeni kullanıcı oluştur
     const user = await User.create({
       firstName,
       lastName,
       email,
       password,
-      role: role || 'user'
+      role: role || 'user',
+      birthDate: birthDate || null,
+      birthPlace: birthPlace || null,
+      nationalId: nationalId || null,
+      iban: iban || null
     });
 
     res.status(201).json({
@@ -70,7 +100,11 @@ exports.createUser = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role
+        role: user.role,
+        birthDate: user.birthDate,
+        birthPlace: user.birthPlace,
+        nationalId: user.nationalId,
+        iban: user.iban
       }
     });
   } catch (error) {
@@ -84,7 +118,17 @@ exports.createUser = async (req, res) => {
 // @access  Private/Admin
 exports.updateUser = async (req, res) => {
   try {
-    const { firstName, lastName, email, role, isActive } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      role, 
+      isActive,
+      birthDate,
+      birthPlace,
+      nationalId,
+      iban
+    } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -100,6 +144,22 @@ exports.updateUser = async (req, res) => {
       }
     }
 
+    // TC Kimlik No değişiyorsa kontrol et
+    if (nationalId && nationalId !== user.nationalId) {
+      const existingNationalId = await User.findOne({ nationalId });
+      if (existingNationalId) {
+        return res.status(400).json({ message: 'Bu TC Kimlik No zaten kayıtlı' });
+      }
+    }
+
+    // IBAN değişiyorsa kontrol et
+    if (iban && iban !== user.iban) {
+      const existingIban = await User.findOne({ iban });
+      if (existingIban) {
+        return res.status(400).json({ message: 'Bu IBAN zaten kayıtlı' });
+      }
+    }
+
     // Güncelle
     user.firstName = firstName || user.firstName;
     user.lastName = lastName || user.lastName;
@@ -109,6 +169,12 @@ exports.updateUser = async (req, res) => {
     if (typeof isActive !== 'undefined') {
       user.isActive = isActive;
     }
+
+    // Yeni alanları güncelle
+    if (birthDate !== undefined) user.birthDate = birthDate || null;
+    if (birthPlace !== undefined) user.birthPlace = birthPlace || null;
+    if (nationalId !== undefined) user.nationalId = nationalId || null;
+    if (iban !== undefined) user.iban = iban || null;
 
     await user.save();
 

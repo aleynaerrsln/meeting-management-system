@@ -8,11 +8,14 @@ const getAllWorkReports = async (req, res) => {
   try {
     let query = {};
     
+    // 🎯 KRITIK DEĞİŞİKLİK: Toplantılardan oluşturulan raporları hariç tut
+    query.meeting = null;
+    
     // Admin değilse sadece kendi raporları veya paylaşılanları görsün
     if (req.user.role !== 'admin') {
       query.$or = [
-        { user: req.user._id },
-        { sharedWith: req.user._id }
+        { user: req.user._id, meeting: null },
+        { sharedWith: req.user._id, meeting: null }
       ];
     }
 
@@ -49,7 +52,10 @@ const getAllWorkReports = async (req, res) => {
     });
   } catch (error) {
     console.error('Rapor listeleme hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+    res.status(500).json({ 
+      message: 'Sunucu hatası', 
+      error: error.message 
+    });
   }
 };
 
@@ -89,20 +95,40 @@ const getWorkReportById = async (req, res) => {
 // @access  Private
 const createWorkReport = async (req, res) => {
   try {
-    const { date, workDescription, hoursWorked, project, notes } = req.body;
+    const { date, workDescription, startTime, endTime, project, notes } = req.body;
 
-    if (!workDescription || !hoursWorked) {
-      return res.status(400).json({ message: 'Çalışma açıklaması ve saat zorunludur' });
+    if (!workDescription || !startTime || !endTime) {
+      return res.status(400).json({ 
+        message: 'Çalışma açıklaması, başlangıç ve bitiş saati zorunludur' 
+      });
     }
 
-    if (hoursWorked < 0 || hoursWorked > 24) {
-      return res.status(400).json({ message: 'Çalışma saati 0-24 arasında olmalıdır' });
+    // Saat hesaplama
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    let diffMinutes = endMinutes - startMinutes;
+    if (diffMinutes < 0) {
+      diffMinutes += 24 * 60;
+    }
+    
+    const hoursWorked = Number((diffMinutes / 60).toFixed(2));
+
+    if (hoursWorked <= 0 || hoursWorked > 24) {
+      return res.status(400).json({ 
+        message: 'Geçersiz çalışma süresi. Bitiş saati başlangıç saatinden sonra olmalıdır.' 
+      });
     }
 
     const report = await WorkReport.create({
       user: req.user._id,
       date: date || Date.now(),
       workDescription,
+      startTime,
+      endTime,
       hoursWorked,
       project,
       notes,
@@ -129,7 +155,7 @@ const createWorkReport = async (req, res) => {
 // @access  Private
 const updateWorkReport = async (req, res) => {
   try {
-    const { date, workDescription, hoursWorked, project, notes, status, sharedWith, isPrivate } = req.body;
+    const { date, workDescription, startTime, endTime, project, notes, status, sharedWith, isPrivate } = req.body;
 
     let report = await WorkReport.findById(req.params.id);
 
@@ -152,9 +178,28 @@ const updateWorkReport = async (req, res) => {
 
     report.date = date || report.date;
     report.workDescription = workDescription || report.workDescription;
-    report.hoursWorked = hoursWorked !== undefined ? hoursWorked : report.hoursWorked;
     report.project = project !== undefined ? project : report.project;
     report.notes = notes !== undefined ? notes : report.notes;
+
+    // Saat güncellemesi
+    if (startTime && endTime) {
+      report.startTime = startTime;
+      report.endTime = endTime;
+
+      // Yeni saat hesaplama
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
+      
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      
+      let diffMinutes = endMinutes - startMinutes;
+      if (diffMinutes < 0) {
+        diffMinutes += 24 * 60;
+      }
+      
+      report.hoursWorked = Number((diffMinutes / 60).toFixed(2));
+    }
     
     if (status && req.user.role === 'admin') {
       report.status = status;
@@ -263,7 +308,7 @@ const getMonthlySummary = async (req, res) => {
   }
 };
 
-// @desc    Tüm kullanıcıların özeti
+// @desc    Tüm kullanıcıların özeti (Admin)
 // @route   GET /api/work-reports/summary/all-users
 // @access  Private/Admin
 const getAllUsersSummary = async (req, res) => {

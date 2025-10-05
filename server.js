@@ -26,6 +26,7 @@ app.use('/api/users', require('./src/routes/users'));
 app.use('/api/meetings', require('./src/routes/meetings'));
 app.use('/api/work-reports', require('./src/routes/workReports'));
 app.use('/api/export', require('./src/routes/export'));
+app.use('/api/sponsorships', require('./src/routes/sponsorships')); // 🆕 YENİ ROUTE
 
 // Test Route
 app.get('/', (req, res) => {
@@ -38,7 +39,8 @@ app.get('/', (req, res) => {
       users: '✅',
       meetings: '✅',
       workReports: '✅',
-      export: '✅'
+      export: '✅',
+      sponsorships: '✅' // 🆕 YENİ ÖZELLIK
     }
   });
 });

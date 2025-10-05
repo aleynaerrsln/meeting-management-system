@@ -16,6 +16,14 @@ const workReportSchema = new mongoose.Schema({
     required: [true, 'Çalışma açıklaması zorunludur'],
     trim: true
   },
+  startTime: {
+    type: String,
+    required: [true, 'Başlangıç saati zorunludur']
+  },
+  endTime: {
+    type: String,
+    required: [true, 'Bitiş saati zorunludur']
+  },
   hoursWorked: {
     type: Number,
     required: [true, 'Çalışma saati zorunludur'],
@@ -41,7 +49,6 @@ const workReportSchema = new mongoose.Schema({
   year: {
     type: Number
   },
-  // 👇 YENİ ALANLAR - Toplantı İçin
   meeting: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Meeting',
@@ -64,12 +71,31 @@ const workReportSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Otomatik saat hesaplama ve hafta/yıl belirleme
 workReportSchema.pre('save', function(next) {
+  // Saat hesaplama (eğer startTime ve endTime varsa)
+  if (this.startTime && this.endTime && !this.hoursWorked) {
+    const [startHour, startMin] = this.startTime.split(':').map(Number);
+    const [endHour, endMin] = this.endTime.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    let diffMinutes = endMinutes - startMinutes;
+    if (diffMinutes < 0) {
+      diffMinutes += 24 * 60; // Gece yarısını geçen durumlar için
+    }
+    
+    this.hoursWorked = Number((diffMinutes / 60).toFixed(2));
+  }
+  
+  // Hafta ve yıl hesaplama
   const date = new Date(this.date);
   this.year = date.getFullYear();
   const firstDayOfYear = new Date(this.year, 0, 1);
   const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
   this.week = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  
   next();
 });
 
