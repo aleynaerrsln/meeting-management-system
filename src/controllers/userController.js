@@ -47,6 +47,7 @@ exports.createUser = async (req, res) => {
       email, 
       password, 
       role,
+      departments, // 🆕 Birimler
       birthDate,
       birthPlace,
       nationalId,
@@ -87,6 +88,7 @@ exports.createUser = async (req, res) => {
       email,
       password,
       role: role || 'user',
+      departments: departments || [], // 🆕 Birimler
       birthDate: birthDate || null,
       birthPlace: birthPlace || null,
       nationalId: nationalId || null,
@@ -101,6 +103,7 @@ exports.createUser = async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
+        departments: user.departments, // 🆕 Birimler
         birthDate: user.birthDate,
         birthPlace: user.birthPlace,
         nationalId: user.nationalId,
@@ -124,6 +127,7 @@ exports.updateUser = async (req, res) => {
       email, 
       role, 
       isActive,
+      departments, // 🆕 Birimler
       birthDate,
       birthPlace,
       nationalId,
@@ -170,7 +174,12 @@ exports.updateUser = async (req, res) => {
       user.isActive = isActive;
     }
 
-    // Yeni alanları güncelle
+    // 🆕 Birimler güncelle
+    if (departments !== undefined) {
+      user.departments = departments;
+    }
+
+    // Diğer alanları güncelle
     if (birthDate !== undefined) user.birthDate = birthDate || null;
     if (birthPlace !== undefined) user.birthPlace = birthPlace || null;
     if (nationalId !== undefined) user.nationalId = nationalId || null;

@@ -3,10 +3,15 @@ const nodemailer = require('nodemailer');
 // E-posta transporter oluştur
 const createTransporter = () => {
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: process.env.EMAIL_PORT || 587,
+    secure: false, // TLS kullan
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
+    },
+    tls: {
+      rejectUnauthorized: false
     }
   });
 };
@@ -18,7 +23,7 @@ exports.sendMeetingInvitation = async (meeting, participants) => {
 
     const mailPromises = participants.map(participant => {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: `"Toplantı Yönetim Sistemi" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
         to: participant.email,
         subject: `Yeni Toplantı Daveti: ${meeting.title}`,
         html: `
@@ -62,7 +67,7 @@ exports.sendMeetingUpdateNotification = async (meeting, participants) => {
 
     const mailPromises = participants.map(participant => {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: `"Toplantı Yönetim Sistemi" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
         to: participant.email,
         subject: `Toplantı Güncellendi: ${meeting.title}`,
         html: `
@@ -104,7 +109,7 @@ exports.sendPasswordResetEmail = async (user, resetToken) => {
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: `"Toplantı Yönetim Sistemi" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
       to: user.email,
       subject: 'Şifre Sıfırlama Talebi',
       html: `
@@ -147,7 +152,7 @@ exports.sendPasswordResetEmail = async (user, resetToken) => {
     console.log(`✅ Şifre sıfırlama e-postası gönderildi: ${user.email}`);
     return true;
   } catch (error) {
-    console.error('❌ Şifre sıfırlama e-postası hatası:', error);
+    console.error('Şifre sıfırlama e-postası hatası:', error);
     throw error;
   }
 };

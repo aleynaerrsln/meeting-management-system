@@ -30,11 +30,23 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'user'],
     default: 'user'
   },
+  // 🆕 BİRİMLER (Birden fazla seçilebilir)
+  departments: [{
+    type: String,
+    enum: [
+      'Yazılım Birimi',
+      'Elektrik Birimi',
+      'Makine Birimi',
+      'Tasarım Birimi',
+      'Yönetim Birimi',
+      'Pazarlama Birimi'
+    ]
+  }],
   isActive: {
     type: Boolean,
     default: true
   },
-  // 🆕 PROFİL FOTOĞRAFI
+  // Profil Fotoğrafı
   profilePhoto: {
     data: Buffer,
     contentType: String,
@@ -116,7 +128,7 @@ userSchema.methods.toJSON = function() {
   delete user.password;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpire;
-  // 🆕 Profil fotoğrafı data'sını gizle (sadece URL döndürmek için)
+  // Profil fotoğrafı data'sını gizle
   if (user.profilePhoto && user.profilePhoto.data) {
     user.hasProfilePhoto = true;
     delete user.profilePhoto.data;
