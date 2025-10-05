@@ -7,7 +7,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5174', 'http://192.168.1.3:5174'],
+  origin: ['http://localhost:5174', 'http://192.168.1.4:5174'],
   credentials: true
 }));
 app.use(express.json());
@@ -60,5 +60,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server ${PORT} portunda çalışıyor`);
-  console.log(`📱 Telefon: http://192.168.1.3:${PORT}`);
+  console.log(`📱 Telefon: http://192.168.1.4:${PORT}`);
 });
