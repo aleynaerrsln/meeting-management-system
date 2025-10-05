@@ -20,7 +20,8 @@ app.use('/api/meetings', require('./src/routes/meetings'));
 app.use('/api/work-reports', require('./src/routes/workReports'));
 app.use('/api/export', require('./src/routes/export'));
 app.use('/api/sponsorships', require('./src/routes/sponsorships'));
-app.use('/api/notifications', require('./src/routes/notifications')); // 🆕 YENİ ROUTE
+app.use('/api/notifications', require('./src/routes/notifications'));
+app.use('/api/messages', require('./src/routes/messages')); // 🆕 YENİ ROUTE
 
 // Test route
 app.get('/', (req, res) => {
