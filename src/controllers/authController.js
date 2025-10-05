@@ -4,9 +4,9 @@ const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('../services/emailService');
 
 // JWT Token oluştur
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d'
+const generateToken = (userId) => {
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE || '7d'
   });
 };
 
@@ -17,47 +17,37 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validasyon
     if (!email || !password) {
       return res.status(400).json({ message: 'E-posta ve şifre gereklidir' });
     }
 
-    // Kullanıcıyı bul
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
       return res.status(401).json({ message: 'Geçersiz e-posta veya şifre' });
     }
 
-    // Hesap aktif mi kontrol et
     if (!user.isActive) {
-      return res.status(401).json({ message: 'Hesabınız deaktif edilmiştir' });
+      return res.status(401).json({ message: 'Hesabınız aktif değil. Lütfen yöneticinizle iletişime geçin' });
     }
 
-    // Şifre kontrolü
-    const isMatch = await user.comparePassword(password);
+    const isPasswordValid = await user.comparePassword(password);
 
-    if (!isMatch) {
+    if (!isPasswordValid) {
       return res.status(401).json({ message: 'Geçersiz e-posta veya şifre' });
     }
 
-    // Son giriş zamanını güncelle
-    user.lastLogin = new Date();
+    user.lastLogin = Date.now();
     await user.save();
 
-    // Token oluştur
     const token = generateToken(user._id);
 
+    const userResponse = user.toJSON();
+
     res.json({
-      message: 'Giriş başarılı',
+      success: true,
       token,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role
-      }
+      user: userResponse
     });
   } catch (error) {
     console.error('Login hatası:', error);
@@ -80,16 +70,14 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ message: 'Yeni şifre en az 6 karakter olmalıdır' });
     }
 
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).select('+password');
 
-    // Mevcut şifre kontrolü
     const isMatch = await user.comparePassword(currentPassword);
 
     if (!isMatch) {
       return res.status(401).json({ message: 'Mevcut şifre hatalı' });
     }
 
-    // Yeni şifreyi kaydet
     user.password = newPassword;
     await user.save();
 
@@ -113,7 +101,88 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// 🆕 @desc    Şifre sıfırlama talebi (Mail gönder)
+// 🆕 @desc    Profil fotoğrafı yükle
+// @route   POST /api/auth/upload-profile-photo
+// @access  Private
+exports.uploadProfilePhoto = async (req, res) => {
+  try {
+    if (!req.files || !req.files.photo) {
+      return res.status(400).json({ message: 'Lütfen bir fotoğraf yükleyin' });
+    }
+
+    const photo = req.files.photo;
+
+    // Dosya tipi kontrolü
+    if (!photo.mimetype.startsWith('image/')) {
+      return res.status(400).json({ message: 'Lütfen sadece resim dosyası yükleyin' });
+    }
+
+    // Dosya boyutu kontrolü (5MB)
+    if (photo.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ message: 'Fotoğraf boyutu 5MB\'dan küçük olmalıdır' });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    user.profilePhoto = {
+      data: photo.data,
+      contentType: photo.mimetype,
+      uploadedAt: new Date()
+    };
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profil fotoğrafı başarıyla yüklendi',
+      hasProfilePhoto: true
+    });
+  } catch (error) {
+    console.error('Profil fotoğrafı yükleme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// 🆕 @desc    Profil fotoğrafını getir
+// @route   GET /api/auth/profile-photo/:userId
+// @access  Public (herkes görebilsin)
+exports.getProfilePhoto = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+
+    if (!user || !user.profilePhoto || !user.profilePhoto.data) {
+      return res.status(404).json({ message: 'Profil fotoğrafı bulunamadı' });
+    }
+
+    res.set('Content-Type', user.profilePhoto.contentType);
+    res.send(user.profilePhoto.data);
+  } catch (error) {
+    console.error('Profil fotoğrafı getirme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// 🆕 @desc    Profil fotoğrafını sil
+// @route   DELETE /api/auth/profile-photo
+// @access  Private
+exports.deleteProfilePhoto = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    user.profilePhoto = undefined;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profil fotoğrafı silindi'
+    });
+  } catch (error) {
+    console.error('Profil fotoğrafı silme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// @desc    Şifre sıfırlama talebi
 // @route   POST /api/auth/forgot-password
 // @access  Public
 exports.forgotPassword = async (req, res) => {
@@ -127,67 +196,51 @@ exports.forgotPassword = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: 'Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı' });
+      return res.status(404).json({ message: 'Bu e-posta adresine kayıtlı kullanıcı bulunamadı' });
     }
 
-    // Reset token oluştur (basit random string)
     const resetToken = crypto.randomBytes(32).toString('hex');
-    
-    // Token'ı hashleyerek veritabanına kaydet
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-    // Token ve expire time'ı kaydet
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpire = Date.now() + 60 * 60 * 1000; // 1 saat
     await user.save();
 
-    // 📧 E-posta gönder
     try {
       await sendPasswordResetEmail(user, resetToken);
-      res.json({ 
-        message: 'Şifre sıfırlama bağlantısı e-posta adresinize gönderildi',
-        success: true 
-      });
+      res.json({ message: 'Şifre sıfırlama bağlantısı e-posta adresinize gönderildi' });
     } catch (emailError) {
-      console.error('❌ E-posta gönderme hatası:', emailError);
-      
-      // Mail gönderilemezse token'ı temizle
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save();
-      
-      return res.status(500).json({ 
-        message: 'E-posta gönderilemedi. Lütfen daha sonra tekrar deneyin.',
-        error: emailError.message 
-      });
-    }
 
+      console.error('E-posta gönderme hatası:', emailError);
+      return res.status(500).json({ message: 'E-posta gönderilemedi. Lütfen daha sonra tekrar deneyin' });
+    }
   } catch (error) {
-    console.error('Şifre sıfırlama talebi hatası:', error);
+    console.error('Şifre sıfırlama hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
 
-// 🆕 @desc    Şifre sıfırlama (Token ile)
+// @desc    Şifre sıfırlama
 // @route   POST /api/auth/reset-password/:token
 // @access  Public
 exports.resetPassword = async (req, res) => {
   try {
     const { token } = req.params;
-    const { newPassword } = req.body;
+    const { password } = req.body;
 
-    if (!newPassword) {
+    if (!password) {
       return res.status(400).json({ message: 'Yeni şifre gereklidir' });
     }
 
-    if (newPassword.length < 6) {
+    if (password.length < 6) {
       return res.status(400).json({ message: 'Şifre en az 6 karakter olmalıdır' });
     }
 
-    // Token'ı hashle
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Token'ı bul ve expire kontrolü yap
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpire: { $gt: Date.now() }
@@ -197,18 +250,12 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Geçersiz veya süresi dolmuş token' });
     }
 
-    // Yeni şifreyi kaydet
-    user.password = newPassword;
+    user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save();
 
-    console.log('✅ Şifre sıfırlandı:', user.email);
-
-    res.json({ 
-      message: 'Şifreniz başarıyla sıfırlandı. Şimdi giriş yapabilirsiniz.',
-      success: true 
-    });
+    res.json({ message: 'Şifre başarıyla sıfırlandı. Artık giriş yapabilirsiniz' });
   } catch (error) {
     console.error('Şifre sıfırlama hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });

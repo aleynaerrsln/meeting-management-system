@@ -9,6 +9,7 @@ const {
   markAsRead,
   deleteMessage,
   getUnreadCount,
+  getUnreadByUser, // 🆕 YENİ EKLENEN FUNCTION
   getAvailableUsers,
   downloadAttachment
 } = require('../controllers/messageController');
@@ -28,6 +29,7 @@ router.use(protect);
 router.get('/inbox', getInbox);
 router.get('/sent', getSent);
 router.get('/unread-count', getUnreadCount);
+router.get('/unread-by-user', getUnreadByUser); // 🆕 YENİ EKLENEN ROUTE
 router.get('/users', getAvailableUsers);
 router.get('/conversation/:userId', getConversation);
 

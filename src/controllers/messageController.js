@@ -28,42 +28,6 @@ exports.getInbox = async (req, res) => {
   }
 };
 
-// @desc    Dosya indir
-// @route   GET /api/messages/:messageId/attachment/:attachmentId
-// @access  Private
-exports.downloadAttachment = async (req, res) => {
-  try {
-    const { messageId, attachmentId } = req.params;
-    
-    const message = await Message.findById(messageId);
-    if (!message) {
-      return res.status(404).json({ message: 'Mesaj bulunamadı' });
-    }
-
-    // Yetki kontrolü
-    if (message.sender.toString() !== req.user._id.toString() && 
-        message.receiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Bu dosyaya erişim yetkiniz yok' });
-    }
-
-    const attachment = message.attachments.id(attachmentId);
-    if (!attachment) {
-      return res.status(404).json({ message: 'Dosya bulunamadı' });
-    }
-
-    res.set({
-      'Content-Type': attachment.mimetype,
-      'Content-Disposition': `attachment; filename="${attachment.originalName}"`,
-      'Content-Length': attachment.size
-    });
-
-    res.send(attachment.data);
-  } catch (error) {
-    console.error('Dosya indirme hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
-  }
-};
-
 // @desc    Giden kutusu - Kullanıcının gönderdiği mesajlar
 // @route   GET /api/messages/sent
 // @access  Private
@@ -97,9 +61,29 @@ exports.getConversation = async (req, res) => {
         { sender: otherUserId, receiver: req.user._id }
       ]
     })
-      .populate('sender', 'firstName lastName email role')
-      .populate('receiver', 'firstName lastName email role')
+      // 🆕 profilePhoto bilgisini de dahil et
+      .populate('sender', 'firstName lastName email role profilePhoto')
+      .populate('receiver', 'firstName lastName email role profilePhoto')
       .sort({ createdAt: 1 });
+
+    // 🆕 Mesajlardaki kullanıcılara hasProfilePhoto flag'i ekle
+    const messagesWithPhotoFlag = messages.map(msg => {
+      const msgObj = msg.toObject();
+      
+      // Sender için
+      if (msgObj.sender && msgObj.sender.profilePhoto) {
+        msgObj.sender.hasProfilePhoto = !!(msgObj.sender.profilePhoto.data);
+        delete msgObj.sender.profilePhoto.data;
+      }
+      
+      // Receiver için
+      if (msgObj.receiver && msgObj.receiver.profilePhoto) {
+        msgObj.receiver.hasProfilePhoto = !!(msgObj.receiver.profilePhoto.data);
+        delete msgObj.receiver.profilePhoto.data;
+      }
+      
+      return msgObj;
+    });
 
     // Gelen mesajları okundu olarak işaretle
     await Message.updateMany(
@@ -109,8 +93,8 @@ exports.getConversation = async (req, res) => {
 
     res.json({
       success: true,
-      count: messages.length,
-      data: messages
+      count: messagesWithPhotoFlag.length,
+      data: messagesWithPhotoFlag
     });
   } catch (error) {
     console.error('Konuşma geçmişi hatası:', error);
@@ -275,23 +259,101 @@ exports.getUnreadCount = async (req, res) => {
   }
 };
 
+// 🆕 @desc    Her kullanıcıdan okunmamış mesaj sayısı
+// @route   GET /api/messages/unread-by-user
+// @access  Private
+exports.getUnreadByUser = async (req, res) => {
+  try {
+    const unreadMessages = await Message.aggregate([
+      {
+        $match: {
+          receiver: req.user._id,
+          isRead: false
+        }
+      },
+      {
+        $group: {
+          _id: '$sender',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: unreadMessages
+    });
+  } catch (error) {
+    console.error('Kullanıcı bazlı sayım hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
 // @desc    Mesajlaşılabilecek kullanıcı listesi
 // @route   GET /api/messages/users
 // @access  Private
 exports.getAvailableUsers = async (req, res) => {
   try {
-    // Kendisi hariç tüm kullanıcılar
+    // Kendisi hariç tüm kullanıcılar - 🆕 profilePhoto bilgisini de dahil et
     const users = await User.find({ 
       _id: { $ne: req.user._id } 
-    }).select('firstName lastName email role');
+    }).select('firstName lastName email role profilePhoto');
+
+    // 🆕 Her kullanıcı için hasProfilePhoto flag'i ekle
+    const usersWithPhotoFlag = users.map(user => {
+      const userObj = user.toObject();
+      // Profil fotoğrafı var mı kontrol et
+      userObj.hasProfilePhoto = !!(user.profilePhoto && user.profilePhoto.data);
+      // Data'yı gizle (sadece flag yeterli)
+      if (userObj.profilePhoto) {
+        delete userObj.profilePhoto.data;
+      }
+      return userObj;
+    });
 
     res.json({
       success: true,
-      count: users.length,
-      data: users
+      count: usersWithPhotoFlag.length,
+      data: usersWithPhotoFlag
     });
   } catch (error) {
     console.error('Kullanıcı listesi hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// @desc    Dosya indir
+// @route   GET /api/messages/:messageId/attachment/:attachmentId
+// @access  Private
+exports.downloadAttachment = async (req, res) => {
+  try {
+    const { messageId, attachmentId } = req.params;
+    
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Mesaj bulunamadı' });
+    }
+
+    // Yetki kontrolü
+    if (message.sender.toString() !== req.user._id.toString() && 
+        message.receiver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Bu dosyaya erişim yetkiniz yok' });
+    }
+
+    const attachment = message.attachments.id(attachmentId);
+    if (!attachment) {
+      return res.status(404).json({ message: 'Dosya bulunamadı' });
+    }
+
+    res.set({
+      'Content-Type': attachment.mimetype,
+      'Content-Disposition': `attachment; filename="${attachment.originalName}"`,
+      'Content-Length': attachment.size
+    });
+
+    res.send(attachment.data);
+  } catch (error) {
+    console.error('Dosya indirme hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };

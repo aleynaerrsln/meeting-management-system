@@ -34,7 +34,13 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  // 🆕 YENİ ALANLAR - Kişisel Bilgiler
+  // 🆕 PROFİL FOTOĞRAFI
+  profilePhoto: {
+    data: Buffer,
+    contentType: String,
+    uploadedAt: Date
+  },
+  // Kişisel Bilgiler
   birthDate: {
     type: Date,
     default: null
@@ -50,7 +56,6 @@ const userSchema = new mongoose.Schema({
     default: null,
     validate: {
       validator: function(v) {
-        // TC Kimlik No 11 haneli olmalı (opsiyonel kontrol)
         return !v || /^\d{11}$/.test(v);
       },
       message: 'TC Kimlik No 11 haneli olmalıdır'
@@ -62,7 +67,6 @@ const userSchema = new mongoose.Schema({
     default: null,
     validate: {
       validator: function(v) {
-        // IBAN formatı kontrolü (basit kontrol)
         return !v || /^TR\d{24}$/.test(v.replace(/\s/g, ''));
       },
       message: 'Geçerli bir Türk IBAN numarası giriniz (TR + 24 hane)'
@@ -75,7 +79,7 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
-  // Şifre Sıfırlama İçin
+  // Şifre Sıfırlama
   resetPasswordToken: {
     type: String,
     default: undefined
@@ -88,7 +92,7 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Şifre hashleme (kaydetmeden önce)
+// Şifre hashleme
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   
@@ -112,6 +116,11 @@ userSchema.methods.toJSON = function() {
   delete user.password;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpire;
+  // 🆕 Profil fotoğrafı data'sını gizle (sadece URL döndürmek için)
+  if (user.profilePhoto && user.profilePhoto.data) {
+    user.hasProfilePhoto = true;
+    delete user.profilePhoto.data;
+  }
   return user;
 };
 
