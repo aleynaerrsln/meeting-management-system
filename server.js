@@ -21,7 +21,8 @@ app.use('/api/work-reports', require('./src/routes/workReports'));
 app.use('/api/export', require('./src/routes/export'));
 app.use('/api/sponsorships', require('./src/routes/sponsorships'));
 app.use('/api/notifications', require('./src/routes/notifications'));
-app.use('/api/messages', require('./src/routes/messages')); // 🆕 YENİ ROUTE
+app.use('/api/messages', require('./src/routes/messages'));
+app.use('/api/activity-points', require('./src/routes/activityPoints')); // 🆕 YENİ ROUTE
 
 // Test route
 app.get('/', (req, res) => {
