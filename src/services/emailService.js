@@ -106,7 +106,7 @@ exports.sendPasswordResetEmail = async (user, resetToken) => {
   try {
     const transporter = createTransporter();
     
-    const resetUrl = `http://localhost:5174//reset-password/${resetToken}`;
+    const resetUrl = `http://localhost:5174/reset-password/${resetToken}`;
 
     const mailOptions = {
       from: `"Toplantı Yönetim Sistemi" <${"spectraloop55@gmail.com"|| "spectraloop55@gmail.com"}>`,
