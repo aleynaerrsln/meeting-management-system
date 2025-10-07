@@ -34,7 +34,8 @@ const getAllWorkReports = async (req, res) => {
 
     console.log('🔍 WorkReport Query:', query);
 
-    const reports = await WorkReport.find(query)
+    // 🆕 attachments.data'yı exclude etmek için projection kullan
+    const reports = await WorkReport.find(query, { 'attachments.data': 0 })
       .populate('user', 'firstName lastName email')
       .populate('meeting', 'title')
       .populate('sharedWith', 'firstName lastName email')
@@ -45,11 +46,31 @@ const getAllWorkReports = async (req, res) => {
 
     const totalHours = reports.reduce((sum, report) => sum + report.hoursWorked, 0);
 
+    // 🆕 Her rapora dosya sayısı bilgisi ekle
+    const reportsWithAttachmentInfo = reports.map(report => {
+      const reportObj = report.toObject();
+      reportObj.attachmentCount = report.attachments?.length || 0;
+      reportObj.hasAttachments = report.attachments?.length > 0;
+      // Attachment bilgilerini data olmadan gönder
+      if (reportObj.attachments) {
+        reportObj.attachments = reportObj.attachments.map(att => ({
+          _id: att._id,
+          filename: att.filename,
+          originalName: att.originalName,
+          mimetype: att.mimetype,
+          size: att.size,
+          fileType: att.fileType,
+          uploadedAt: att.uploadedAt
+        }));
+      }
+      return reportObj;
+    });
+
     res.json({
       success: true,
       count: reports.length,
       totalHours,
-      data: reports
+      data: reportsWithAttachmentInfo
     });
   } catch (error) {
     console.error('Rapor listeleme hatası:', error);
@@ -65,7 +86,8 @@ const getAllWorkReports = async (req, res) => {
 // @access  Private
 const getWorkReportById = async (req, res) => {
   try {
-    const report = await WorkReport.findById(req.params.id)
+    // 🆕 attachments.data'yı exclude et
+    const report = await WorkReport.findById(req.params.id, { 'attachments.data': 0 })
       .populate('user', 'firstName lastName email')
       .populate('meeting', 'title')
       .populate('sharedWith', 'firstName lastName email')
@@ -84,7 +106,21 @@ const getWorkReportById = async (req, res) => {
       return res.status(403).json({ message: 'Bu raporu görme yetkiniz yok' });
     }
 
-    res.json(report);
+    // 🆕 Attachment bilgilerini data olmadan gönder
+    const reportObj = report.toObject();
+    if (reportObj.attachments) {
+      reportObj.attachments = reportObj.attachments.map(att => ({
+        _id: att._id,
+        filename: att.filename,
+        originalName: att.originalName,
+        mimetype: att.mimetype,
+        size: att.size,
+        fileType: att.fileType,
+        uploadedAt: att.uploadedAt
+      }));
+    }
+
+    res.json(reportObj);
   } catch (error) {
     console.error('Rapor getirme hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
@@ -120,8 +156,45 @@ const createWorkReport = async (req, res) => {
 
     if (hoursWorked <= 0 || hoursWorked > 24) {
       return res.status(400).json({ 
-        message: 'Geçersiz çalışma süresi. Bitiş saati başlangıç saatinden sonra olmalıdır.' 
+        message: 'Geçersiz çalışma süresi. Bitiş saati başlangıç saatinden sonra olmalıdır.'
       });
+    }
+
+    // 🆕 Dosya ekleri işleme
+    const attachments = [];
+    if (req.files) {
+      const files = Array.isArray(req.files.attachments) 
+        ? req.files.attachments 
+        : req.files.attachments ? [req.files.attachments] : [];
+      
+      for (const file of files) {
+        // Dosya tipi kontrolü (sadece PDF ve resimler)
+        const isPdf = file.mimetype === 'application/pdf';
+        const isImage = file.mimetype.startsWith('image/');
+        
+        if (!isPdf && !isImage) {
+          return res.status(400).json({ 
+            message: 'Sadece PDF ve resim dosyaları yüklenebilir' 
+          });
+        }
+
+        // Dosya boyutu kontrolü (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          return res.status(400).json({ 
+            message: 'Dosya boyutu 10MB\'dan küçük olmalıdır' 
+          });
+        }
+
+        attachments.push({
+          filename: `${Date.now()}_${file.name}`,
+          originalName: file.name,
+          mimetype: file.mimetype,
+          size: file.size,
+          data: file.data,
+          fileType: isPdf ? 'pdf' : 'image',
+          uploadedAt: new Date()
+        });
+      }
     }
 
     const report = await WorkReport.create({
@@ -137,14 +210,29 @@ const createWorkReport = async (req, res) => {
       sharedWith: [],
       isPrivate: false,
       createdBy: req.user._id,
-      status: 'submitted'
+      status: 'submitted',
+      attachments // 🆕 Dosya eklerini kaydet
     });
 
     await report.populate('user', 'firstName lastName email');
 
+    // 🆕 Response'da data'yı exclude et
+    const reportObj = report.toObject();
+    if (reportObj.attachments) {
+      reportObj.attachments = reportObj.attachments.map(att => ({
+        _id: att._id,
+        filename: att.filename,
+        originalName: att.originalName,
+        mimetype: att.mimetype,
+        size: att.size,
+        fileType: att.fileType,
+        uploadedAt: att.uploadedAt
+      }));
+    }
+
     res.status(201).json({
       message: 'Çalışma raporu başarıyla oluşturuldu',
-      report
+      report: reportObj
     });
   } catch (error) {
     console.error('Rapor oluşturma hatası:', error);
@@ -183,7 +271,6 @@ const updateWorkReport = async (req, res) => {
     report.project = project !== undefined ? project : report.project;
     report.notes = notes !== undefined ? notes : report.notes;
 
-    // Saat güncellemesi
     if (startTime && endTime) {
       report.startTime = startTime;
       report.endTime = endTime;
@@ -201,53 +288,100 @@ const updateWorkReport = async (req, res) => {
       
       report.hoursWorked = Number((diffMinutes / 60).toFixed(2));
     }
-    
-    // 🆕 DURUM DEĞİŞİKLİĞİ VE BİLDİRİM
-    if (status && req.user.role === 'admin' && status !== report.status) {
-      const oldStatus = report.status;
-      report.status = status;
 
-      // Red durumunda sebep kaydet
-      if (status === 'rejected' && rejectionReason) {
-        report.rejectionReason = rejectionReason;
-        console.log('📝 Red sebebi kaydedildi:', rejectionReason);
-      }
+    // 🆕 Yeni dosya ekleri varsa ekle
+    if (req.files) {
+      const files = Array.isArray(req.files.attachments) 
+        ? req.files.attachments 
+        : req.files.attachments ? [req.files.attachments] : [];
+      
+      for (const file of files) {
+        const isPdf = file.mimetype === 'application/pdf';
+        const isImage = file.mimetype.startsWith('image/');
+        
+        if (!isPdf && !isImage) {
+          return res.status(400).json({ 
+            message: 'Sadece PDF ve resim dosyaları yüklenebilir' 
+          });
+        }
 
-      // Red veya onay durumunda bildirim oluştur
-      if (status === 'rejected' || status === 'approved') {
-        const notificationData = {
-          user: report.user,
-          type: status === 'rejected' ? 'report_rejected' : 'report_approved',
-          title: status === 'rejected' ? 'Rapor Reddedildi' : 'Rapor Onaylandı',
-          message: status === 'rejected' 
-            ? `"${report.workDescription.substring(0, 50)}..." raporunuz reddedildi.${rejectionReason ? ' Sebep: ' + rejectionReason : ''}`
-            : `"${report.workDescription.substring(0, 50)}..." raporunuz onaylandı.`,
-          relatedReport: report._id
-        };
+        if (file.size > 10 * 1024 * 1024) {
+          return res.status(400).json({ 
+            message: 'Dosya boyutu 10MB\'dan küçük olmalıdır' 
+          });
+        }
 
-        console.log('🔔 Bildirim oluşturuluyor:', notificationData);
-
-        const notification = await Notification.create(notificationData);
-
-        console.log('✅ Bildirim başarıyla oluşturuldu:', notification._id);
+        report.attachments.push({
+          filename: `${Date.now()}_${file.name}`,
+          originalName: file.name,
+          mimetype: file.mimetype,
+          size: file.size,
+          data: file.data,
+          fileType: isPdf ? 'pdf' : 'image',
+          uploadedAt: new Date()
+        });
       }
     }
 
-    // Admin paylaşım ayarlarını değiştirebilir
-    if (req.user.role === 'admin') {
-      if (sharedWith !== undefined) report.sharedWith = sharedWith;
-      if (isPrivate !== undefined) report.isPrivate = isPrivate;
+    if (status && req.user.role === 'admin') {
+      report.status = status;
+      
+      if (status === 'rejected' && rejectionReason) {
+        report.rejectionReason = rejectionReason;
+        
+        await Notification.create({
+          user: report.user,
+          type: 'report_rejected',
+          title: 'Rapor Reddedildi',
+          message: `Raporunuz reddedildi. Sebep: ${rejectionReason}`,
+          relatedReport: report._id
+        });
+      } else if (status === 'approved') {
+        report.rejectionReason = '';
+        
+        await Notification.create({
+          user: report.user,
+          type: 'report_approved',
+          title: 'Rapor Onaylandı',
+          message: 'Çalışma raporunuz onaylandı.',
+          relatedReport: report._id
+        });
+      }
+    }
+
+    if (sharedWith !== undefined) {
+      report.sharedWith = sharedWith;
+    }
+
+    if (isPrivate !== undefined) {
+      report.isPrivate = isPrivate;
     }
 
     await report.save();
     await report.populate('user', 'firstName lastName email');
     await report.populate('sharedWith', 'firstName lastName email');
+    await report.populate('meeting', 'title');
 
-    console.log('💾 Rapor kaydedildi. Durum:', report.status, 'Red Sebebi:', report.rejectionReason);
+    console.log('✅ Rapor güncellendi:', report._id);
+    console.log('📌 Durum:', report.status, 'Red Sebebi:', report.rejectionReason);
+
+    // 🆕 Response'da data'yı exclude et
+    const reportObj = report.toObject();
+    if (reportObj.attachments) {
+      reportObj.attachments = reportObj.attachments.map(att => ({
+        _id: att._id,
+        filename: att.filename,
+        originalName: att.originalName,
+        mimetype: att.mimetype,
+        size: att.size,
+        fileType: att.fileType,
+        uploadedAt: att.uploadedAt
+      }));
+    }
 
     res.json({
       message: 'Rapor başarıyla güncellendi',
-      report
+      report: reportObj
     });
   } catch (error) {
     console.error('❌ Rapor güncelleme hatası:', error);
@@ -278,6 +412,76 @@ const deleteWorkReport = async (req, res) => {
     res.json({ message: 'Rapor başarıyla silindi' });
   } catch (error) {
     console.error('Rapor silme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// 🆕 @desc    Dosya eki indir
+// @route   GET /api/work-reports/:id/attachment/:attachmentId
+// @access  Private
+const downloadAttachment = async (req, res) => {
+  try {
+    const report = await WorkReport.findById(req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ message: 'Rapor bulunamadı' });
+    }
+
+    // Yetki kontrolü
+    const canView = req.user.role === 'admin' || 
+                    report.user.toString() === req.user._id.toString() ||
+                    report.sharedWith.some(u => u.toString() === req.user._id.toString());
+
+    if (!canView) {
+      return res.status(403).json({ message: 'Bu dosyaya erişim yetkiniz yok' });
+    }
+
+    const attachment = report.attachments.id(req.params.attachmentId);
+
+    if (!attachment) {
+      return res.status(404).json({ message: 'Dosya bulunamadı' });
+    }
+
+    res.set('Content-Type', attachment.mimetype);
+    res.set('Content-Disposition', `attachment; filename="${attachment.originalName}"`);
+    res.send(attachment.data);
+  } catch (error) {
+    console.error('Dosya indirme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
+  }
+};
+
+// 🆕 @desc    Dosya eki sil
+// @route   DELETE /api/work-reports/:id/attachment/:attachmentId
+// @access  Private
+const deleteAttachment = async (req, res) => {
+  try {
+    const report = await WorkReport.findById(req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ message: 'Rapor bulunamadı' });
+    }
+
+    // Yetki kontrolü
+    const canEdit = req.user.role === 'admin' || 
+                    report.user.toString() === req.user._id.toString();
+
+    if (!canEdit) {
+      return res.status(403).json({ message: 'Bu dosyayı silme yetkiniz yok' });
+    }
+
+    const attachment = report.attachments.id(req.params.attachmentId);
+
+    if (!attachment) {
+      return res.status(404).json({ message: 'Dosya bulunamadı' });
+    }
+
+    attachment.deleteOne();
+    await report.save();
+
+    res.json({ message: 'Dosya başarıyla silindi' });
+  } catch (error) {
+    console.error('Dosya silme hatası:', error);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 };
@@ -336,48 +540,48 @@ const getMonthlySummary = async (req, res) => {
   }
 };
 
-// @desc    Tüm kullanıcıların özeti (Admin)
+// @desc    Tüm kullanıcıların çalışma özeti (Admin)
 // @route   GET /api/work-reports/summary/all-users
 // @access  Private/Admin
 const getAllUsersSummary = async (req, res) => {
   try {
-    const { week, year, month } = req.query;
-    const users = await User.find().select('firstName lastName email');
+    const { startDate, endDate } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        message: 'Başlangıç ve bitiş tarihleri gereklidir' 
+      });
+    }
+
+    const users = await User.find({ role: 'user' });
     
     const summaries = await Promise.all(users.map(async (user) => {
-      let summary;
-      
-      if (week && year) {
-        summary = await WorkReport.getWeeklyHours(user._id, parseInt(week), parseInt(year));
-      } else if (month && year) {
-        summary = await WorkReport.getMonthlyHours(user._id, parseInt(month), parseInt(year));
-      } else {
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const firstDayOfYear = new Date(currentYear, 0, 1);
-        const pastDaysOfYear = (now - firstDayOfYear) / 86400000;
-        const currentWeek = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-        summary = await WorkReport.getWeeklyHours(user._id, currentWeek, currentYear);
-      }
+      const reports = await WorkReport.find({
+        user: user._id,
+        date: { 
+          $gte: new Date(startDate), 
+          $lte: new Date(endDate) 
+        },
+        status: { $in: ['submitted', 'approved'] }
+      });
+
+      const totalHours = reports.reduce((sum, report) => sum + report.hoursWorked, 0);
 
       return {
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email
-        },
-        ...summary
+        userId: user._id,
+        userName: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        totalHours,
+        reportCount: reports.length
       };
     }));
 
     summaries.sort((a, b) => b.totalHours - a.totalHours);
-    const grandTotal = summaries.reduce((sum, s) => sum + s.totalHours, 0);
 
     res.json({
       success: true,
-      userCount: summaries.length,
-      grandTotalHours: grandTotal,
+      startDate,
+      endDate,
       data: summaries
     });
   } catch (error) {
@@ -392,6 +596,8 @@ module.exports = {
   createWorkReport,
   updateWorkReport,
   deleteWorkReport,
+  downloadAttachment, // 🆕
+  deleteAttachment, // 🆕
   getWeeklySummary,
   getMonthlySummary,
   getAllUsersSummary

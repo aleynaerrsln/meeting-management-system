@@ -72,6 +72,38 @@ const workReportSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // 🆕 YENİ EKLENEN: Dosya ekleri (PDF ve Resimler)
+  attachments: [{
+    filename: {
+      type: String,
+      required: true
+    },
+    originalName: {
+      type: String,
+      required: true
+    },
+    mimetype: {
+      type: String,
+      required: true
+    },
+    size: {
+      type: Number,
+      required: true
+    },
+    data: {
+      type: Buffer,
+      required: true
+    },
+    fileType: {
+      type: String,
+      enum: ['pdf', 'image'],
+      required: true
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now

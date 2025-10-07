@@ -16,7 +16,7 @@ exports.protect = async (req, res, next) => {
     }
 
     // Token'ı doğrula
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, "super_secret_jwt_key_12345_change_this");
 
     // Kullanıcıyı bul
     const user = await User.findById(decoded.id).select('-password');

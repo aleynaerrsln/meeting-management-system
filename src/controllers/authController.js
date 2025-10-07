@@ -5,8 +5,8 @@ const { sendPasswordResetEmail } = require('../services/emailService');
 
 // JWT Token oluştur
 const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
+  return jwt.sign({ id: userId }, "super_secret_jwt_key_12345_change_this", {
+    expiresIn:'7d'
   });
 };
 

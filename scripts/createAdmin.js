@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const createAdmin = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect("mongodb+srv://admin:admin123@cluster0.ydbf");
     console.log('MongoDB bağlantısı başarılı');
 
     // Admin kullanıcısı var mı kontrol et
