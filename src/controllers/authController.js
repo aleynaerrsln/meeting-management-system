@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const sharp = require('sharp'); // 📦 npm install sharp
 const { sendPasswordResetEmail } = require('../services/emailService');
 
 // JWT Token oluştur
@@ -101,7 +102,7 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// 🆕 @desc    Profil fotoğrafı yükle
+// ✅ @desc    Profil fotoğrafı yükle (Optimize Edilmiş)
 // @route   POST /api/auth/upload-profile-photo
 // @access  Private
 exports.uploadProfilePhoto = async (req, res) => {
@@ -124,11 +125,33 @@ exports.uploadProfilePhoto = async (req, res) => {
 
     const user = await User.findById(req.user._id);
 
-    user.profilePhoto = {
-      data: photo.data,
-      contentType: photo.mimetype,
-      uploadedAt: new Date()
-    };
+    try {
+      // ✅ Sharp ile görüntüyü optimize et
+      const optimizedImage = await sharp(photo.data)
+        .resize(500, 500, {
+          fit: 'cover',
+          position: 'center'
+        })
+        .jpeg({
+          quality: 85,
+          progressive: true
+        })
+        .toBuffer();
+
+      user.profilePhoto = {
+        data: optimizedImage,
+        contentType: 'image/jpeg',
+        uploadedAt: new Date()
+      };
+    } catch (sharpError) {
+      // Sharp çalışmazsa orijinali kullan
+      console.warn('Sharp kullanılamadı, orijinal fotoğraf kaydediliyor:', sharpError.message);
+      user.profilePhoto = {
+        data: photo.data,
+        contentType: photo.mimetype,
+        uploadedAt: new Date()
+      };
+    }
 
     await user.save();
 
@@ -143,7 +166,7 @@ exports.uploadProfilePhoto = async (req, res) => {
   }
 };
 
-// 🆕 @desc    Profil fotoğrafını getir
+// @desc    Profil fotoğrafını getir
 // @route   GET /api/auth/profile-photo/:userId
 // @access  Public (herkes görebilsin)
 exports.getProfilePhoto = async (req, res) => {
@@ -162,7 +185,7 @@ exports.getProfilePhoto = async (req, res) => {
   }
 };
 
-// 🆕 @desc    Profil fotoğrafını sil
+// @desc    Profil fotoğrafını sil
 // @route   DELETE /api/auth/profile-photo
 // @access  Private
 exports.deleteProfilePhoto = async (req, res) => {
