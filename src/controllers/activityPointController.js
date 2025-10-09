@@ -81,7 +81,14 @@ exports.getLeaderboard = async (req, res) => {
           lastName: '$userInfo.lastName',
           email: '$userInfo.email',
           departments: '$userInfo.departments',
-          profilePhoto: '$userInfo.profilePhoto'
+          // Profil fotoğrafı var mı kontrol et
+          hasProfilePhoto: {
+            $cond: {
+              if: { $and: ['$userInfo.profilePhoto', '$userInfo.profilePhoto.data'] },
+              then: true,
+              else: false
+            }
+          }
         }
       },
       {
